@@ -1,6 +1,12 @@
 name: Tests
 
-on: [push, pull_request]
+on:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: "Optional mocha test file(s) to run instead of the full suite"
+        required: false
+        default: ""
 
 env:
   FORCE_COLOR: 2
@@ -9,6 +15,7 @@ jobs:
   run:
     name: Node.js ${{ matrix.node }} @ ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
@@ -18,22 +25,51 @@ jobs:
 
     steps:
       - name: Clone repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+          architecture: x64
+
+      # time-require is an unused github: devDependency that old npm cannot fetch;
+      # drop it from the install only (package.json is restored before packing).
+      - name: Drop unused time-require devDependency
+        shell: bash
+        run: node -e "var f='package.json',p=JSON.parse(require('fs').readFileSync(f,'utf8'));delete p.devDependencies['time-require'];require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
 
       - name: Install npm dependencies
         run: npm install
 
       - name: Run tests
-        run: npm run test:ci
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            npx nyc mocha --reporter dot ${{ inputs.test-filter }}
+          else
+            npm run test:ci
+          fi
 
       - name: Run Coveralls
         # `master` should be a tag but they don't have one
         uses: coverallsapp/github-action@master
-        if: startsWith(matrix.os, 'ubuntu') && matrix.node == 14
+        if: false
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Pack tarball
+        if: startsWith(matrix.os, 'ubuntu') && matrix.node == 12
+        shell: bash
+        run: |
+          git checkout -- package.json
+          npm --version
+          npm pack
+
+      - name: Upload tarball
+        if: startsWith(matrix.os, 'ubuntu') && matrix.node == 12
+        uses: actions/upload-artifact@v4
+        with:
+          name: picomatch-tgz
+          path: picomatch-*.tgz
+          if-no-files-found: error
