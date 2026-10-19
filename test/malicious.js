@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { isMatch } = require('..');
+const { isMatch, makeRe } = require('..');
 const repeat = n => '\\'.repeat(n);
 
 /**
@@ -29,5 +29,17 @@ describe('handling of potential regex exploits', () => {
     assert.throws(() => {
       assert(!isMatch('A', `!(${repeat(500)}A)`, { maxLength: 499 }));
     }, /Input length: 504, exceeds maximum allowed length: 499/);
+  });
+
+  it('should be able to accept Object instance properties', function () {
+    assert(isMatch('constructor', 'constructor'), 'valid match');
+    assert(isMatch('__proto__', '__proto__'), 'valid match');
+    assert(isMatch('toString', 'toString'), 'valid match');
+  });
+
+  it('should not expose internal prototype properties', function () {
+    assert.equal(makeRe('[[:constructor:]]').toString(), '/^(?:[[:constructor:]\\])$/');
+    assert(!isMatch('f }]', '[[:constructor:]]'), 'not valid match');
+    assert(!isMatch('a }]', '[[:constructor:]]'),  'not valid match');
   });
 });
